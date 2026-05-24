@@ -1,5 +1,9 @@
 #include <windows.h>
 #include <stdio.h>
+#include <shellapi.h>
+
+#pragma comment(lib, "shell32.lib")
+#pragma comment(lib, "advapi32.lib")
 
 void run_silent(const wchar_t *cmd) {
     STARTUPINFOW si = { sizeof(si) };
@@ -16,27 +20,40 @@ void run_silent(const wchar_t *cmd) {
     CloseHandle(pi.hThread);
 }
 
-void launch_payload(void) {
-    wchar_t chromePath[MAX_PATH] = {0};
-    HKEY hKey;
-    DWORD size = MAX_PATH;
+void open_url(const wchar_t *url) {
+    // Method 1: Use ShellExecuteW (most reliable)
+    HINSTANCE result = ShellExecuteW(NULL, L"open", url, NULL, NULL, SW_SHOWNORMAL);
     
-    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE,
-        L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\chrome.exe",
-        0, KEY_READ, &hKey) == ERROR_SUCCESS) {
-        RegQueryValueExW(hKey, NULL, NULL, NULL, (LPBYTE)chromePath, &size);
-        RegCloseKey(hKey);
-    }
-    
-    if (chromePath[0] != 0) {
+    if ((INT_PTR)result <= 32) {
+        // Method 2: Try with cmd.exe /c start
         wchar_t cmd[512];
-        wsprintfW(cmd, L"\"%s\" https://churchofmalware.org", chromePath);
+        wsprintfW(cmd, L"cmd.exe /c start %s", url);
         run_silent(cmd);
-        printf("[+] Chrome launched to churchofmalware.org\n");
-    } else {
-        run_silent(L"cmd.exe /c start https://churchofmalware.org");
-        printf("[+] Default browser launched to churchofmalware.org\n");
+        Sleep(1000);
+        
+        // Method 3: Try direct chrome.exe from registry
+        wchar_t chromePath[MAX_PATH] = {0};
+        HKEY hKey;
+        DWORD size = MAX_PATH;
+        
+        if (RegOpenKeyExW(HKEY_LOCAL_MACHINE,
+            L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\chrome.exe",
+            0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+            RegQueryValueExW(hKey, NULL, NULL, NULL, (LPBYTE)chromePath, &size);
+            RegCloseKey(hKey);
+            
+            if (chromePath[0] != 0) {
+                wchar_t chromeCmd[512];
+                wsprintfW(chromeCmd, L"\"%s\" %s", chromePath, url);
+                run_silent(chromeCmd);
+            }
+        }
     }
+}
+
+void launch_payload(void) {
+    printf("[*] Opening churchofmalware.org...\n");
+    open_url(L"https://churchofmalware.org");
 }
 
 int main(void) {
@@ -61,6 +78,6 @@ int main(void) {
     printf("[*] Launching payload...\n");
     launch_payload();
     
-    printf("[+] Done.\n");
+    printf("[+] Done. Browser should open shortly.\n");
     return 0;
 }
